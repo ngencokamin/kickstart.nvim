@@ -25,7 +25,7 @@ return {
           ['P'] = {
             'toggle_preview',
             config = {
-              use_float = false,
+              use_float = true,
             },
           },
         },
@@ -33,6 +33,13 @@ return {
       filesystem = {
         follow_current_file = {
           enabled = true,
+        },
+        filtered_items = {
+          visible = true,
+          hide_dotfiles = false,
+          never_show = {
+            '.DS_Store',
+          },
         },
       },
     },
