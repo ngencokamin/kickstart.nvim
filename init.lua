@@ -377,7 +377,7 @@ require('lazy').setup({
 
       -- [[ Configure Telescope ]]
       -- See `:help telescope` and `:help telescope.setup()`
-      local action_layout = require("telescope.actions.layout")
+      local action_layout = require 'telescope.actions.layout'
       require('telescope').setup {
         -- You can put your default mappings / updates / etc. in here
         --  All the info you're looking for is in `:help telescope.setup()`
@@ -385,27 +385,26 @@ require('lazy').setup({
         defaults = {
           mappings = {
             n = {
-                    ["<M-p>"] = action_layout.toggle_preview
+              ['<M-p>'] = action_layout.toggle_preview,
             },
             i = {
-              ["<M-p>"] = action_layout.toggle_preview
-            },         
+              ['<M-p>'] = action_layout.toggle_preview,
+            },
           },
         },
         -- pickers = {}
         extensions = {
           ['ui-select'] = { require('telescope.themes').get_dropdown() },
           fzf = {
-            fuzzy = true,                    -- false will only do exact matching
-            override_generic_sorter = true,  -- override the generic sorter
-            override_file_sorter = true,     -- override the file sorter
-            case_mode = "smart_case",        -- or "ignore_case" or "respect_case"
-                                            -- the default case_mode is "smart_case"
-          }
+            fuzzy = true, -- false will only do exact matching
+            override_generic_sorter = true, -- override the generic sorter
+            override_file_sorter = true, -- override the file sorter
+            case_mode = 'smart_case', -- or "ignore_case" or "respect_case"
+            -- the default case_mode is "smart_case"
+          },
         },
       }
-      require('telescope').load_extension('fzf')
-
+      require('telescope').load_extension 'fzf'
 
       -- Enable Telescope extensions if they are installed
       pcall(require('telescope').load_extension, 'fzf')
@@ -612,12 +611,11 @@ require('lazy').setup({
       local servers = {
         ruby_lsp = {
           cmd = {
-            "bash", "-c",
-            'cd /Users/ngk86v/Documents/Github/avant-basic/.vscode/ruby-lsp-env && bundle exec ruby-lsp'
+            'bash',
+            '-c',
+            'cd /Users/ngk86v/Documents/Github/avant-basic/.vscode/ruby-lsp-env && bundle exec ruby-lsp',
           },
-          root_dir = function(fname)
-            return vim.fn.getcwd()
-          end,
+          root_dir = function(fname) return vim.fn.getcwd() end,
         },
         -- clangd = {},
         -- gopls = {},
@@ -640,13 +638,11 @@ require('lazy').setup({
       -- You can press `g?` for help in this menu.
       local ensure_installed = vim.tbl_keys(servers or {})
       -- Remove ruby_lsp since we're using a custom installation
-      ensure_installed = vim.tbl_filter(function(name)
-        return name ~= 'ruby_lsp'
-      end, ensure_installed)
-      
+      ensure_installed = vim.tbl_filter(function(name) return name ~= 'ruby_lsp' end, ensure_installed)
+
       vim.list_extend(ensure_installed, {
         'lua-language-server', -- Lua Language server
-        'stylua'
+        'stylua',
         -- You can add other tools here that you want Mason to install
       })
 
@@ -655,16 +651,16 @@ require('lazy').setup({
       -- Handle ruby_lsp separately with autostart
       local ruby_lsp_config = servers.ruby_lsp
       if ruby_lsp_config then
-        servers.ruby_lsp = nil  -- Remove from servers table
+        servers.ruby_lsp = nil -- Remove from servers table
         vim.api.nvim_create_autocmd('FileType', {
           pattern = 'ruby',
           callback = function()
-            vim.lsp.start({
+            vim.lsp.start {
               name = 'ruby_lsp',
               cmd = ruby_lsp_config.cmd,
               root_dir = vim.fn.getcwd(),
               capabilities = vim.tbl_deep_extend('force', {}, capabilities, ruby_lsp_config.capabilities or {}),
-            })
+            }
           end,
         })
       end
@@ -847,8 +843,8 @@ require('lazy').setup({
     config = function()
       ---@diagnostic disable-next-line: missing-fields
       require('catppuccin').setup {
-        flavor = "frappe",
-          -- comments = { italic = false }, -- Disable italics in comments
+        flavor = 'frappe',
+        -- comments = { italic = false }, -- Disable italics in comments
       }
 
       -- Load the colorscheme here.
@@ -921,7 +917,7 @@ require('lazy').setup({
   -- require 'kickstart.plugins.debug',
   -- require 'kickstart.plugins.indent_line',
   -- require 'kickstart.plugins.lint',
-  -- require 'kickstart.plugins.autopairs',
+  require 'kickstart.plugins.autopairs',
   --require 'kickstart.plugins.neo-tree',
   -- require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
 
