@@ -20,6 +20,20 @@ return {
           align = 'right',
         },
       },
+      commands = {
+        diff_file = function(state)
+          local node = state.tree:get_node()
+          if node.type == 'file' then vim.cmd('DiffviewOpen -- ' .. vim.fn.fnameescape(node.path)) end
+        end,
+        blame_file = function(state)
+          local node = state.tree:get_node()
+          if node.type == 'file' then vim.cmd('Git blame ' .. vim.fn.fnameescape(node.path)) end
+        end,
+        file_history = function(state)
+          local node = state.tree:get_node()
+          if node.type == 'file' then vim.cmd('DiffviewFileHistory ' .. vim.fn.fnameescape(node.path)) end
+        end,
+      },
       window = {
         mappings = {
           ['P'] = {
@@ -28,6 +42,9 @@ return {
               use_float = true,
             },
           },
+          ['gd'] = 'diff_file',
+          ['gf'] = 'file_history',
+          ['gb'] = 'blame_file',
         },
       },
       filesystem = {
@@ -39,6 +56,7 @@ return {
           hide_dotfiles = false,
           never_show = {
             '.DS_Store',
+            '.git/',
           },
         },
       },
@@ -49,6 +67,7 @@ return {
         function()
           require('neo-tree.command').execute {
             toggle = true,
+            reveal = true,
             source = 'filesystem',
             position = 'float',
           }
