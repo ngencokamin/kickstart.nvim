@@ -87,11 +87,17 @@ P.S. You can delete this when you're done too. It's your config now! :)
 -- Set <space> as the leader key
 -- See `:help mapleader`
 --  NOTE: Must happen before plugins are loaded (otherwise wrong leader will be used)
+-- Disable netrw to prevent it from intercepting https:// URIs (e.g. sorbet stdlib definitions)
+-- and running :!wget, which causes cmdline noise and crashes.
+vim.g.loaded_netrw = 1
+vim.g.loaded_netrwPlugin = 1
+
 vim.g.mapleader = ' '
 vim.g.maplocalleader = ' '
 
 -- Set to true if you have a Nerd Font installed and selected in the terminal
 vim.g.have_nerd_font = true
+vim.g.autoformat_enabled = true
 
 -- [[ Setting options ]]
 -- See `:help vim.o`
@@ -174,6 +180,14 @@ vim.o.autoread = true
 --  See `:help hlsearch`
 vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 
+-- Delete/change to black hole register (no clipboard copy)
+-- cc still cuts (yanks line then changes)
+vim.keymap.set({ 'n', 'v' }, 'd', '"_d')
+vim.keymap.set('n', 'dd', '"_dd')
+vim.keymap.set({ 'n', 'v' }, 'x', '"_x')
+vim.keymap.set({ 'n', 'v' }, 'c', '"_c')
+vim.keymap.set('n', 'cc', function() vim.cmd 'normal! yy"_cc' end)
+
 -- Diagnostic Config & Keymaps
 -- See :help vim.diagnostic.Opts
 vim.diagnostic.config {
@@ -199,6 +213,7 @@ vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagn
 -- NOTE: This won't work in all terminal emulators/tmux/etc. Try your own mapping
 -- or just use <C-\><C-n> to exit terminal mode
 vim.keymap.set('t', '<Esc><Esc>', '<C-\\><C-n>', { desc = 'Exit terminal mode' })
+vim.keymap.set('t', '<C-w>', '<C-\\><C-n><C-w>', { desc = 'Window navigation from terminal' })
 
 -- TIP: Disable arrow keys in normal mode
 -- vim.keymap.set('n', '<left>', '<cmd>echo "Use h to move!!"<CR>')
@@ -359,7 +374,7 @@ require('lazy').setup({
       vim.keymap.set('n', '<leader>sp', fzf.builtin, { desc = '[S]earch [P]ickers (fzf-lua builtins)' })
       vim.keymap.set('n', '<leader>sw', fzf.grep_cword, { desc = '[S]earch current [W]ord' })
       vim.keymap.set('v', '<leader>sw', fzf.grep_visual, { desc = '[S]earch current [W]ord' })
-      vim.keymap.set('n', '<leader>sg', fzf.live_grep, { desc = '[S]earch by [G]rep' })
+      vim.keymap.set('n', '<leader>sg', function() fzf.live_grep { rg_glob = true } end, { desc = '[S]earch by [G]rep' })
       vim.keymap.set('n', '<leader>sd', fzf.diagnostics_workspace, { desc = '[S]earch [D]iagnostics' })
       vim.keymap.set('n', '<leader>sr', fzf.resume, { desc = '[S]earch [R]esume' })
       vim.keymap.set('n', '<leader>s.', fzf.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
@@ -377,9 +392,63 @@ require('lazy').setup({
         group = vim.api.nvim_create_augroup('fzf-lua-lsp-attach', { clear = true }),
         callback = function(event)
           local buf = event.buf
-          vim.keymap.set('n', 'grr', fzf.lsp_references, { buffer = buf, desc = '[G]oto [R]eferences' })
+          vim.keymap.set('n', 'grr', function()
+            local params = vim.lsp.util.make_position_params()
+            vim.lsp.buf_request(0, 'textDocument/references', params, function(err, result)
+              if result and not vim.tbl_isempty(result) then
+                fzf.lsp_references()
+              else
+                -- Grab the full qualified name (e.g. Avant::Event::Alert::Channel) under/around cursor
+                local line = vim.api.nvim_get_current_line()
+                local col = vim.api.nvim_win_get_cursor(0)[2] + 1
+                local s, e = col, col
+                while s > 1 and line:sub(s - 1, s - 1):match '[%w_:]' do
+                  s = s - 1
+                end
+                while e < #line and line:sub(e + 1, e + 1):match '[%w_:]' do
+                  e = e + 1
+                end
+                local symbol = line:sub(s, e):gsub('^:+', '')
+
+                -- Only qualify with enclosing module/class nesting for constants (uppercase).
+                -- Method names (lowercase) must not be qualified — they don't exist as Foo::Bar::method.
+                if not symbol:find '::' and symbol:match '^%u' then
+                  local nesting = {}
+                  local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+                  for i = 1, cursor_line - 1 do
+                    local l = vim.api.nvim_buf_get_lines(0, i - 1, i, false)[1] or ''
+                    local names = l:match '^%s*module%s+([%w_:]+)' or l:match '^%s*class%s+([%w_:]+)'
+                    if names then
+                      -- Split on :: to handle "module Avant::Event" style
+                      for part in names:gmatch '[%w_]+' do
+                        table.insert(nesting, part)
+                      end
+                    end
+                  end
+                  if #nesting > 0 then
+                    table.insert(nesting, symbol)
+                    symbol = table.concat(nesting, '::')
+                  end
+                end
+
+                fzf.grep { search = symbol }
+              end
+            end)
+          end, { buffer = buf, desc = '[G]oto [R]eferences (LSP + grep fallback)' })
           vim.keymap.set('n', 'gri', fzf.lsp_implementations, { buffer = buf, desc = '[G]oto [I]mplementation' })
-          vim.keymap.set('n', 'grd', fzf.lsp_definitions, { buffer = buf, desc = '[G]oto [D]efinition' })
+          vim.keymap.set('n', 'grd', function()
+            local params = vim.lsp.util.make_position_params()
+            vim.lsp.buf_request(0, 'textDocument/definition', params, function(err, result)
+              if result and not vim.tbl_isempty(result) then
+                fzf.lsp_definitions()
+              else
+                vim.schedule(function()
+                  local ok, _ = pcall(vim.cmd, 'tag ' .. vim.fn.expand '<cword>')
+                  if not ok then vim.notify('No definition found', vim.log.levels.WARN) end
+                end)
+              end
+            end)
+          end, { buffer = buf, desc = '[G]oto [D]efinition (LSP + ctags fallback)' })
           vim.keymap.set('n', 'gO', fzf.lsp_document_symbols, { buffer = buf, desc = 'Open Document Symbols' })
           vim.keymap.set('n', 'gW', fzf.lsp_live_workspace_symbols, { buffer = buf, desc = 'Open Workspace Symbols' })
           vim.keymap.set('n', 'grt', fzf.lsp_typedefs, { buffer = buf, desc = '[G]oto [T]ype Definition' })
@@ -391,9 +460,21 @@ require('lazy').setup({
 
       -- Live grep in open files
       vim.keymap.set('n', '<leader>s/', function() fzf.live_grep { grep_open_files = true } end, { desc = '[S]earch [/] in Open Files' })
+      vim.keymap.set('n', '<leader>sb', fzf.lgrep_curbuf, { desc = '[S]earch current [B]uffer' })
 
       -- Search Neovim configuration files
       vim.keymap.set('n', '<leader>sn', function() fzf.files { cwd = vim.fn.stdpath 'config' } end, { desc = '[S]earch [N]eovim files' })
+
+      -- Search project repos
+      vim.keymap.set('n', '<leader>sP', function() fzf.files { cwd = '~/Documents/Github/a3' } end, { desc = '[S]earch [P]roject files' })
+
+      -- Set filetype
+      vim.keymap.set('n', '<leader>ft', function()
+        local filetypes = { 'bash', 'java', 'javascript', 'json', 'lua', 'markdown', 'python', 'ruby', 'sql', 'typescript', 'typescriptreact', 'yaml' }
+        vim.ui.select(filetypes, { prompt = 'Set filetype' }, function(choice)
+          if choice then vim.bo.filetype = choice end
+        end)
+      end, { desc = '[F]ile[T]ype set' })
     end,
   },
 
@@ -472,6 +553,8 @@ require('lazy').setup({
           --  For example, in C this would take you to the header.
           map('grD', vim.lsp.buf.declaration, '[G]oto [D]eclaration')
 
+          -- Format code
+          map('grf', vim.lsp.buf.format, '[F]ormat Code')
           -- The following two autocommands are used to highlight references of the
           -- word under your cursor when your cursor rests there for a little while.
           --    See `:help CursorHold` for information about when this is executed
@@ -533,7 +616,15 @@ require('lazy').setup({
           cmd = {
             'bash',
             '-c',
-            'cd /Users/ngk86v/Documents/Github/avant-basic/.vscode/ruby-lsp-env && bundle exec ruby-lsp',
+            'cd /Users/ngk86v/Documents/Github/avant-basic/.vscode/ruby-lsp-env && RUBOCOP_OPTS="--config /Users/ngk86v/Documents/Github/avant-basic/.vscode/ruby-lsp-env/.rubocop.yml" bundle exec ruby-lsp',
+          },
+          root_dir = function(fname) return vim.fn.getcwd() end,
+        },
+        sorbet = {
+          cmd = {
+            'bash',
+            '-c',
+            'cd /Users/ngk86v/Documents/Github/avant-basic/.vscode/ruby-lsp-env && bundle exec srb tc --typed true --lsp',
           },
           root_dir = function(fname) return vim.fn.getcwd() end,
         },
@@ -559,7 +650,7 @@ require('lazy').setup({
       local ensure_installed = vim.tbl_keys(servers or {})
       -- Remove ruby_lsp since we're using a custom installation
       -- Filter servers whose Mason package names differ from lspconfig names
-      local mason_name_overrides = { ruby_lsp = true, jsonls = true, ts_ls = true, yamlls = true }
+      local mason_name_overrides = { ruby_lsp = true, sorbet = true, jsonls = true, ts_ls = true, yamlls = true }
       ensure_installed = vim.tbl_filter(function(name) return not mason_name_overrides[name] end, ensure_installed)
 
       vim.list_extend(ensure_installed, {
@@ -569,25 +660,61 @@ require('lazy').setup({
         'yaml-language-server', -- YAML (yamlls in lspconfig)
         'lua-language-server', -- Lua language server
         'stylua',
+        'prettierd',
+        'eslint_d',
+        'markdownlint',
       })
 
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
-      -- Handle ruby_lsp separately with autostart
+      -- Handle ruby_lsp and sorbet separately with autostart
       local ruby_lsp_config = servers.ruby_lsp
+      local sorbet_config = servers.sorbet
       if ruby_lsp_config then
         servers.ruby_lsp = nil -- Remove from servers table
+      end
+      if sorbet_config then
+        servers.sorbet = nil -- Remove from servers table
+      end
+      if ruby_lsp_config or sorbet_config then
         vim.api.nvim_create_autocmd('FileType', {
           pattern = 'ruby',
           callback = function()
-            vim.lsp.start {
-              name = 'ruby_lsp',
-              cmd = ruby_lsp_config.cmd,
-              root_dir = vim.fn.getcwd(),
-              capabilities = vim.tbl_deep_extend('force', {}, capabilities, ruby_lsp_config.capabilities or {}),
-            }
+            if ruby_lsp_config then
+              vim.lsp.start {
+                name = 'ruby_lsp',
+                cmd = ruby_lsp_config.cmd,
+                root_dir = vim.fn.getcwd(),
+                capabilities = vim.tbl_deep_extend('force', {}, capabilities, ruby_lsp_config.capabilities or {}),
+              }
+            end
+            if sorbet_config then
+              vim.lsp.start {
+                name = 'sorbet',
+                cmd = sorbet_config.cmd,
+                root_dir = vim.fn.getcwd(),
+                capabilities = vim.tbl_deep_extend('force', {}, capabilities, sorbet_config.capabilities or {}),
+              }
+            end
           end,
         })
+      end
+
+      -- Suppress Sorbet diagnostics (false positives without RBI stubs)
+      vim.lsp.handlers['textDocument/publishDiagnostics'] = function(err, result, ctx, config)
+        if result and vim.lsp.get_client_by_id(ctx.client_id) then
+          local client = vim.lsp.get_client_by_id(ctx.client_id)
+          if client and client.name == 'sorbet' then result.diagnostics = {} end
+        end
+        vim.lsp.diagnostic.on_publish_diagnostics(err, result, ctx, config)
+      end
+
+      -- Route LSP window/showMessage through vim.notify so snacks displays them top-right
+      -- instead of printing to the cmdline (avoids sorbet wget noise at the bottom)
+      vim.lsp.handlers['window/showMessage'] = function(_, result, ctx)
+        local client = vim.lsp.get_client_by_id(ctx.client_id)
+        local lvl = ({ 'ERROR', 'WARN', 'INFO', 'DEBUG' })[result.type]
+        vim.notify(result.message, vim.log.levels[lvl] or vim.log.levels.INFO, { title = client and client.name or 'LSP' })
       end
 
       for name, server in pairs(servers) do
@@ -636,10 +763,42 @@ require('lazy').setup({
         mode = '',
         desc = '[F]ormat buffer',
       },
+      {
+        '<leader>la',
+        vim.lsp.buf.code_action,
+        ft = 'ruby',
+        desc = 'Rubocop [A]utocorrect (code action)',
+      },
+      {
+        '<leader>lA',
+        function()
+          local file = vim.fn.expand '%:p'
+          vim.cmd(
+            '!cd /Users/ngk86v/Documents/Github/avant-basic/.vscode/ruby-lsp-env && bundle exec rubocop -A --config .rubocop.yml --stderr -f quiet '
+              .. vim.fn.shellescape(file)
+          )
+        end,
+        ft = 'ruby',
+        desc = 'Rubocop [A]utocorrect file',
+      },
+      {
+        '<leader>lt',
+        function()
+          vim.g.autoformat_enabled = not vim.g.autoformat_enabled
+          vim.notify('Autoformat ' .. (vim.g.autoformat_enabled and 'enabled' or 'disabled'))
+        end,
+        desc = '[T]oggle autoformat',
+      },
+      {
+        '<leader>lw',
+        '<cmd>noautocmd write<cr>',
+        desc = '[W]rite without format',
+      },
     },
     opts = {
       notify_on_error = false,
       format_on_save = function(bufnr)
+        if not vim.g.autoformat_enabled then return nil end
         -- Disable "format_on_save lsp_fallback" for languages that don't
         -- have a well standardized coding style. You can add additional
         -- languages here or re-enable it for the disabled ones.
@@ -655,11 +814,15 @@ require('lazy').setup({
       end,
       formatters_by_ft = {
         lua = { 'stylua' },
-        -- Conform can also run multiple formatters sequentially
-        -- python = { "isort", "black" },
-        --
-        -- You can use 'stop_after_first' to run the first available formatter from the list
-        -- javascript = { "prettierd", "prettier", stop_after_first = true },
+        javascript = { 'prettierd' },
+        javascriptreact = { 'prettierd' },
+        typescript = { 'prettierd' },
+        typescriptreact = { 'prettierd' },
+        json = { 'prettierd' },
+        yaml = { 'prettierd' },
+        css = { 'prettierd' },
+        html = { 'prettierd' },
+        markdown = { 'prettierd' },
       },
     },
   },
@@ -684,12 +847,10 @@ require('lazy').setup({
           -- `friendly-snippets` contains a variety of premade snippets.
           --    See the README about individual language/framework/plugin snippets:
           --    https://github.com/rafamadriz/friendly-snippets
-          -- {
-          --   'rafamadriz/friendly-snippets',
-          --   config = function()
-          --     require('luasnip.loaders.from_vscode').lazy_load()
-          --   end,
-          -- },
+          {
+            'rafamadriz/friendly-snippets',
+            config = function() require('luasnip.loaders.from_vscode').lazy_load() end,
+          },
         },
         opts = {},
       },
@@ -719,7 +880,7 @@ require('lazy').setup({
         -- <c-k>: Toggle signature help
         --
         -- See :h blink-cmp-config-keymap for defining your own keymap
-        preset = 'default',
+        preset = 'super-tab',
 
         -- For more advanced Luasnip keymaps (e.g. selecting choice nodes, expansion) see:
         --    https://github.com/L3MON4D3/LuaSnip?tab=readme-ov-file#keymaps
@@ -735,6 +896,7 @@ require('lazy').setup({
         -- By default, you may press `<c-space>` to show the documentation.
         -- Optionally, set `auto_show = true` to show the documentation after a delay.
         documentation = { auto_show = false, auto_show_delay_ms = 500 },
+        ghost_text = { enabled = true },
       },
 
       sources = {
@@ -813,6 +975,27 @@ require('lazy').setup({
       ---@diagnostic disable-next-line: duplicate-set-field
       statusline.section_location = function() return '%2l:%-2v' end
 
+      ---@diagnostic disable-next-line: duplicate-set-field
+      local orig_fileinfo = statusline.section_fileinfo
+      statusline.section_fileinfo = function(args)
+        local info = orig_fileinfo(args)
+        return info .. ' ' .. (vim.g.autoformat_enabled and '󰷬' or '󰷪')
+      end
+
+      -- Show Claude context bar in statusline when a session is active
+      ---@diagnostic disable-next-line: duplicate-set-field
+      local orig_active = statusline.active
+      statusline.active = function()
+        local ctx = vim.g.claude_ctx_line
+        if ctx and ctx ~= '' then
+          local pct = tonumber(ctx:match '(%d+)%%') or 0
+          local hl = pct >= 78 and 'DiagnosticError' or pct >= 60 and 'DiagnosticWarn' or 'DiagnosticOk'
+          local escaped = ctx:gsub('%%', '%%%%')
+          return '%#' .. hl .. '#  ' .. escaped .. '  %*' .. orig_active()
+        end
+        return orig_active()
+      end
+
       -- ... and there is more!
       --  Check out: https://github.com/nvim-mini/mini.nvim
     end,
@@ -861,7 +1044,7 @@ require('lazy').setup({
   --
   -- require 'kickstart.plugins.debug',
   -- require 'kickstart.plugins.indent_line',
-  -- require 'kickstart.plugins.lint',
+  require 'kickstart.plugins.lint',
   require 'kickstart.plugins.autopairs',
   --require 'kickstart.plugins.neo-tree',
   require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
