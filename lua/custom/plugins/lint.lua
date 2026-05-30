@@ -9,6 +9,8 @@ return {
     lint.linters_by_ft['typescript'] = { 'eslint_d' }
     lint.linters_by_ft['typescriptreact'] = { 'eslint_d' }
     lint.linters_by_ft['cucumber'] = { 'gherkin_lint' }
+    lint.linters_by_ft['swift'] = { 'swiftlint' }
+    lint.linters_by_ft['make'] = { 'checkmake' }
 
     -- gherkin-lint: use project-local binary via npx
     lint.linters.gherkin_lint = {

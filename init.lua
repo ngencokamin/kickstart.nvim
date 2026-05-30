@@ -104,6 +104,12 @@ vim.g.autoformat_enabled = true
 -- NOTE: You can change these options as you wish!
 --  For more options, you can see `:help option-list`
 
+-- Default to 2-space indentation
+vim.o.tabstop = 2
+vim.o.shiftwidth = 2
+vim.o.softtabstop = 2
+vim.o.expandtab = true
+
 -- Make line numbers default
 vim.o.number = true
 -- You can also add relative line numbers, to help with jumping.
@@ -470,7 +476,8 @@ require('lazy').setup({
 
       -- Set filetype
       vim.keymap.set('n', '<leader>ft', function()
-        local filetypes = { 'bash', 'java', 'javascript', 'json', 'lua', 'markdown', 'python', 'ruby', 'sql', 'typescript', 'typescriptreact', 'yaml' }
+        local filetypes =
+          { 'bash', 'java', 'javascript', 'json', 'lua', 'make', 'markdown', 'python', 'ruby', 'sql', 'swift', 'typescript', 'typescriptreact', 'yaml' }
         vim.ui.select(filetypes, { prompt = 'Set filetype' }, function(choice)
           if choice then vim.bo.filetype = choice end
         end)
@@ -638,6 +645,7 @@ require('lazy').setup({
           },
         },
         lemminx = {},
+        sourcekit = {},
       }
 
       -- Ensure the servers and tools above are installed
@@ -650,7 +658,7 @@ require('lazy').setup({
       local ensure_installed = vim.tbl_keys(servers or {})
       -- Remove ruby_lsp since we're using a custom installation
       -- Filter servers whose Mason package names differ from lspconfig names
-      local mason_name_overrides = { ruby_lsp = true, sorbet = true, jsonls = true, ts_ls = true, yamlls = true }
+      local mason_name_overrides = { ruby_lsp = true, sorbet = true, jsonls = true, ts_ls = true, yamlls = true, sourcekit = true }
       ensure_installed = vim.tbl_filter(function(name) return not mason_name_overrides[name] end, ensure_installed)
 
       vim.list_extend(ensure_installed, {
@@ -663,6 +671,7 @@ require('lazy').setup({
         'prettierd',
         'eslint_d',
         'markdownlint',
+        'checkmake',
       })
 
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
@@ -823,6 +832,7 @@ require('lazy').setup({
         css = { 'prettierd' },
         html = { 'prettierd' },
         markdown = { 'prettierd' },
+        swift = { 'swift_format' },
       },
     },
   },
@@ -962,6 +972,30 @@ require('lazy').setup({
       -- - sr)'  - [S]urround [R]eplace [)] [']
       require('mini.surround').setup()
 
+      -- <leader>{ + text object/motion wraps with {} in normal mode
+      -- <leader>{ in visual mode wraps selection with {}
+      -- Examples: <leader>{iw  <leader>{ap  <leader>{i(  <leader>{2j
+      _G.MiniSurroundAddCurly = function(motion_type)
+        if motion_type == 'line' then
+          vim.cmd "normal! '[V']"
+        elseif motion_type == 'block' then
+          vim.cmd 'normal! `[\022`]'
+        else
+          vim.cmd 'normal! `[v`]'
+        end
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('sa{', true, false, true), 'n', false)
+      end
+      vim.keymap.set('n', '<leader>{', function()
+        vim.o.operatorfunc = 'v:lua.MiniSurroundAddCurly'
+        return 'g@'
+      end, { expr = true, desc = 'Wrap motion/text-object with {}' })
+      vim.keymap.set(
+        'x',
+        '<leader>{',
+        function() vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('sa{', true, false, true), 'n', false) end,
+        { desc = 'Wrap selection with {}' }
+      )
+
       -- Simple and easy statusline.
       --  You could remove this setup call if you don't like it,
       --  and try some other statusline plugin
@@ -1015,9 +1049,11 @@ require('lazy').setup({
         'json',
         'lua',
         'luadoc',
+        'make',
         'markdown',
         'markdown_inline',
         'query',
+        'swift',
         'tsx',
         'typescript',
         'vim',
