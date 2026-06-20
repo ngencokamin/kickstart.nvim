@@ -4,7 +4,7 @@ return {
   lazy = false,
   ---@type snacks.Config
   opts = {
-    -- Used by claudecode.nvim as terminal provider
+    -- Used by codex.nvim as terminal provider
     terminal = { enabled = true },
 
     -- Pretty notification system (replaces vim.notify)

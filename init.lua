@@ -1016,20 +1016,6 @@ require('lazy').setup({
         return info .. ' ' .. (vim.g.autoformat_enabled and '󰷬' or '󰷪')
       end
 
-      -- Show Claude context bar in statusline when a session is active
-      ---@diagnostic disable-next-line: duplicate-set-field
-      local orig_active = statusline.active
-      statusline.active = function()
-        local ctx = vim.g.claude_ctx_line
-        if ctx and ctx ~= '' then
-          local pct = tonumber(ctx:match '(%d+)%%') or 0
-          local hl = pct >= 78 and 'DiagnosticError' or pct >= 60 and 'DiagnosticWarn' or 'DiagnosticOk'
-          local escaped = ctx:gsub('%%', '%%%%')
-          return '%#' .. hl .. '#  ' .. escaped .. '  %*' .. orig_active()
-        end
-        return orig_active()
-      end
-
       -- ... and there is more!
       --  Check out: https://github.com/nvim-mini/mini.nvim
     end,
