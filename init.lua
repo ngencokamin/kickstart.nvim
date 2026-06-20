@@ -619,22 +619,7 @@ require('lazy').setup({
             },
           },
         },
-        ruby_lsp = {
-          cmd = {
-            'bash',
-            '-c',
-            'cd /Users/ngk86v/Documents/Github/avant-basic/.vscode/ruby-lsp-env && RUBOCOP_OPTS="--config /Users/ngk86v/Documents/Github/avant-basic/.vscode/ruby-lsp-env/.rubocop.yml" bundle exec ruby-lsp',
-          },
-          root_dir = function(fname) return vim.fn.getcwd() end,
-        },
-        sorbet = {
-          cmd = {
-            'bash',
-            '-c',
-            'cd /Users/ngk86v/Documents/Github/avant-basic/.vscode/ruby-lsp-env && bundle exec srb tc --typed true --lsp',
-          },
-          root_dir = function(fname) return vim.fn.getcwd() end,
-        },
+        ruby_lsp = {},
         ts_ls = {},
         yamlls = {
           settings = {
@@ -656,17 +641,18 @@ require('lazy').setup({
       --
       -- You can press `g?` for help in this menu.
       local ensure_installed = vim.tbl_keys(servers or {})
-      -- Remove ruby_lsp since we're using a custom installation
       -- Filter servers whose Mason package names differ from lspconfig names
-      local mason_name_overrides = { ruby_lsp = true, sorbet = true, jsonls = true, ts_ls = true, yamlls = true, sourcekit = true }
+      local mason_name_overrides = { ruby_lsp = true, jsonls = true, ts_ls = true, yamlls = true, sourcekit = true }
       ensure_installed = vim.tbl_filter(function(name) return not mason_name_overrides[name] end, ensure_installed)
 
       vim.list_extend(ensure_installed, {
         'jdtls', -- Java language server (configured via nvim-jdtls, not lspconfig)
         'json-lsp', -- JSON language server (jsonls in lspconfig)
+        'ruby-lsp', -- Ruby/Rails language server
         'typescript-language-server', -- TypeScript/JavaScript (ts_ls in lspconfig)
         'yaml-language-server', -- YAML (yamlls in lspconfig)
         'lua-language-server', -- Lua language server
+        'rubocop',
         'stylua',
         'prettierd',
         'eslint_d',
@@ -676,50 +662,8 @@ require('lazy').setup({
 
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
-      -- Handle ruby_lsp and sorbet separately with autostart
-      local ruby_lsp_config = servers.ruby_lsp
-      local sorbet_config = servers.sorbet
-      if ruby_lsp_config then
-        servers.ruby_lsp = nil -- Remove from servers table
-      end
-      if sorbet_config then
-        servers.sorbet = nil -- Remove from servers table
-      end
-      if ruby_lsp_config or sorbet_config then
-        vim.api.nvim_create_autocmd('FileType', {
-          pattern = 'ruby',
-          callback = function()
-            if ruby_lsp_config then
-              vim.lsp.start {
-                name = 'ruby_lsp',
-                cmd = ruby_lsp_config.cmd,
-                root_dir = vim.fn.getcwd(),
-                capabilities = vim.tbl_deep_extend('force', {}, capabilities, ruby_lsp_config.capabilities or {}),
-              }
-            end
-            if sorbet_config then
-              vim.lsp.start {
-                name = 'sorbet',
-                cmd = sorbet_config.cmd,
-                root_dir = vim.fn.getcwd(),
-                capabilities = vim.tbl_deep_extend('force', {}, capabilities, sorbet_config.capabilities or {}),
-              }
-            end
-          end,
-        })
-      end
-
-      -- Suppress Sorbet diagnostics (false positives without RBI stubs)
-      vim.lsp.handlers['textDocument/publishDiagnostics'] = function(err, result, ctx, config)
-        if result and vim.lsp.get_client_by_id(ctx.client_id) then
-          local client = vim.lsp.get_client_by_id(ctx.client_id)
-          if client and client.name == 'sorbet' then result.diagnostics = {} end
-        end
-        vim.lsp.diagnostic.on_publish_diagnostics(err, result, ctx, config)
-      end
-
       -- Route LSP window/showMessage through vim.notify so snacks displays them top-right
-      -- instead of printing to the cmdline (avoids sorbet wget noise at the bottom)
+      -- instead of printing to the cmdline
       vim.lsp.handlers['window/showMessage'] = function(_, result, ctx)
         local client = vim.lsp.get_client_by_id(ctx.client_id)
         local lvl = ({ 'ERROR', 'WARN', 'INFO', 'DEBUG' })[result.type]
@@ -782,10 +726,10 @@ require('lazy').setup({
         '<leader>lA',
         function()
           local file = vim.fn.expand '%:p'
-          vim.cmd(
-            '!cd /Users/ngk86v/Documents/Github/avant-basic/.vscode/ruby-lsp-env && bundle exec rubocop -A --config .rubocop.yml --stderr -f quiet '
-              .. vim.fn.shellescape(file)
-          )
+          local command = vim.fn.filereadable(vim.fn.getcwd() .. '/Gemfile') == 1
+              and ('bundle exec rubocop -A --stderr -f quiet ' .. vim.fn.shellescape(file))
+            or ('rubocop -A --stderr -f quiet ' .. vim.fn.shellescape(file))
+          vim.cmd('!' .. command)
         end,
         ft = 'ruby',
         desc = 'Rubocop [A]utocorrect file',
@@ -823,6 +767,7 @@ require('lazy').setup({
       end,
       formatters_by_ft = {
         lua = { 'stylua' },
+        ruby = { 'rubocop' },
         javascript = { 'prettierd' },
         javascriptreact = { 'prettierd' },
         typescript = { 'prettierd' },
