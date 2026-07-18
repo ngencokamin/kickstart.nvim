@@ -961,6 +961,27 @@ require('lazy').setup({
         return info .. ' ' .. (vim.g.autoformat_enabled and '󰷬' or '󰷪')
       end
 
+      local function codex_statusline()
+        local ok_indicator, indicator = pcall(require, 'codex.status_indicator')
+        if not ok_indicator or type(indicator._get_status) ~= 'function' then return '' end
+
+        local ok_config, indicator_config = pcall(require, 'codex.status_indicator_config')
+        if not ok_config then return '' end
+
+        local status = indicator._get_status()
+        if status == 'disconnected' then return '' end
+
+        local icon = indicator_config.defaults.icons[status]
+        local hl = indicator_config.defaults.colors[status]
+        if not icon then return '' end
+        if hl and hl ~= '' then return ('%%#%s#  Codex %s  %%*'):format(hl, icon) end
+        return ('  Codex %s  '):format(icon)
+      end
+
+      ---@diagnostic disable-next-line: duplicate-set-field
+      local orig_active = statusline.active
+      statusline.active = function() return codex_statusline() .. orig_active() end
+
       -- ... and there is more!
       --  Check out: https://github.com/nvim-mini/mini.nvim
     end,
